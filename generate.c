@@ -12,12 +12,12 @@ void printDec(mpz_t value){
 	gmp_printf("%#Zd",value);
 }
 
-
-
+//encrypts plaintext m with public key (n,e)
 void encrypt(mpz_t res, mpz_t m, mpz_t e, mpz_t n){
 	mpz_powm(res,m,e,n);
 }
 
+//decrypts ciphertext c with private key (n,d)
 void decrypt(mpz_t res, mpz_t c, mpz_t d, mpz_t n){
 	mpz_powm(res,c,d,n);
 }
@@ -64,92 +64,119 @@ void inverse(mpz_t res, mpz_t e, mpz_t phi){
 }
 
 //miller-rabin primality test
+//value: tested number; k: test precision (the bigger, the better and slower)
 //https://cs.wikipedia.org/wiki/Miller%C5%AFv%E2%80%93Rabin%C5%AFv_test_prvo%C4%8D%C3%ADselnosti
-bool isPrime(mpz_t value, int k){
+bool my_isprime(mpz_t value, int k){
 	
+	//create local copy, so the changes wont propagate out of the function
 	mpz_t value_local;
 	mpz_init(value_local);
 	mpz_set(value_local,value);
 
+	//we operate with value decremented by 1 (n-1)
 	mpz_t value_local_dec;
 	mpz_init(value_local_dec);
 	mpz_sub_ui(value_local_dec,value_local,1);
 
+	//odd remained after repeating division by 2
 	mpz_t d;
 	mpz_init(d);
+
+	//value_local_dec_remaining contains value after repeated division by 2
+	mpz_t value_local_dec_reamining;
+	mpz_init(value_local_dec_reamining);
+	mpz_set(value_local_dec_reamining,value_local_dec);
+
+	//count, how many times we divided by 2
 	int s=0;
 	while(true){
-		mpz_fdiv_q_ui(value_local_dec,value_local_dec,2);
+		//divide by 2
+		mpz_fdiv_q_ui(value_local_dec_reamining,value_local_dec_reamining,2);
+		
+		//increase count
 		s++;
 
-		if(mpz_tstbit(value_local_dec,0)==1){
-			//if the quotient after division is odd (==d), break
-			mpz_set(d,value_local_dec);
+		//if the remaining value is odd, we are done; assign this value into d
+		if(mpz_odd_p(value_local_dec_reamining)){
+			mpz_set(d,value_local_dec_reamining);
 			break;
 		}
 	}
 
 
+	//initialize variables needed by the algo
 	mpz_t a;
 	mpz_init(a);
 	mpz_t x;
 	mpz_init(x);
+
 	for(int i=0; i<k; i++){
+
+		//generate random number a from interval [2;n-2]
 		gmp_randstate_t state;
 		gmp_randinit_default(state);
 		gmp_randseed_ui(state,666);
-		//todo: modify bounds (rand from 2 to n-2)
-		mpz_urandomm(a,state,value_local);
+		//mpz_urandomm returns number from 0 to NUM-1, so NUM=n-1 is correct upper bound
+		mpz_urandomm(a,state,value_local_dec); 
+		if(mpz_cmp_ui(a,2)<0){
+			//mpz_urandomm lower bound cannot be set, so modify the result conditionally
+			mpz_add_ui(a,a,2);
+		}
 
+		//x = a^d mod n
 		mpz_powm(x,a,d,value_local);
 
-		if(mpz_cmp_ui(x,1)==0 || mpz_cmp(x,value_local_dec)){
+		//if x==1 or x==n-1, goto LOOP (next loop increases result correctness probability)
+		if(mpz_cmp_ui(x,1)==0 || mpz_cmp(x,value_local_dec)==0){
 			continue;
 		}
 
 		for(int r=1; r<s; r++){
-			mpz_powm(x,x,2,value_local);
+			
+			//x = x^2 mod n
+			mpz_powm_ui(x,x,2,value_local);
+			
+			//if x==1, the number is not a prime
 			if(mpz_cmp_ui(x,1)==0){
 				return false;
 			}
-			if(mpz_cmp(x,value_local_dec)){
+			
+			//if x==n-1, goto LOOP (next loop increases result correctness probabilty)
+			if(mpz_cmp(x,value_local_dec)==0){
 				break;
 			}
 		}
+
+		return false;
 	}
-
-	// printDec(value_local_dec);
-
 
 	return true;
 }
 
-int cyclesBreak = 200;
 void my_nextprime(mpz_t res, mpz_t value){
 	
-	mpz_t local_value;
-	mpz_init(local_value);
-	mpz_set(local_value,value);
+	//create local copy, so any changes wont propagate out
+	mpz_t value_local;
+	mpz_init(value_local);
+	mpz_set(value_local,value);
 
-	int lsb = mpz_tstbit(local_value,0);
-	if(lsb==0){
-		mpz_add_ui(local_value,local_value,1);
-		mpz_set(res,local_value);
+	//if number is even, do +1 to get odd (only odds may be primes)
+	if(mpz_even_p(value_local)!=0){
+		mpz_add_ui(value_local,value_local,1);
 	}
 	
 	while(true){
-
-		if(cyclesBreak--==0){
-			printf("PRIME NOT FOUND\n");
-			break;
-		}
-		if(isPrime(local_value,15)){
-			printf("JOO\n");
-			mpz_set(res,local_value);
+		//as stated here: https://gmplib.org/manual/Number-Theoretic-Functions.html#Number-Theoretic-Functions
+		//reasonable values for k (probability of false positive) are between 15 and 50
+		if(my_isprime(value_local,15)){
+			//if number is prime, assign it to result and stop
+			mpz_set(res,value_local);
 			break;
 		}
 		else{
-			mpz_add_ui(local_value,local_value,2);
+			//if number is not prime, do +2 and try again
+			mpz_add_ui(value_local,value_local,2);
+			continue;
 		}
 	}
 
@@ -161,32 +188,68 @@ void generate(char* bitSizeArg){
 	sscanf(bitSizeArg,"%i",&bitSize);
 
 
+	//init randstate, use time as a seed
+	gmp_randstate_t randstate;
+	gmp_randinit_default(randstate);
+	gmp_randseed_ui(randstate,30);
 
 
+	//init p
 	mpz_t p;
 	mpz_init2(p,512);
-	gmp_randstate_t state_p;
-	gmp_randinit_default(state_p);
-	gmp_randseed_ui(state_p,30);
-	mpz_urandomb(p,state_p,512);
+	while(true){
+		
+		//assign it random value of n bits
+		mpz_urandomb(p,randstate,512);
 
-	printf("BEFORE\n");
+		//msb has to be 1, if not, generate new random value
+		if(mpz_tstbit(p,511)!=1){
+			continue;
+		}
+
+		//get first prime number larger than value generated
+		my_nextprime(p,p);
+
+		//if the prime number size has exceeded the predefined size, generate again 
+		if(mpz_sizeinbase(p,2)>512){
+			continue;
+		}
+
+		break;
+	}
+
 	printDec(p);
 	printf("\n");
-	my_nextprime(p,p);
-	printf("AFTER\n");
-	printDec(p);
-	printf("\n");
 
-
+	//init q
 	mpz_t q;
 	mpz_init2(q,512);
-	gmp_randstate_t state_q;
-	gmp_randinit_default(state_q);
-	gmp_randseed_ui(state_q, 40);
-	mpz_urandomb(q,state_q,512);
+	while(true){
+		
+		//assign it random value of n bits
+		mpz_urandomb(q,randstate,512);
 
-	mpz_nextprime(q,q);
+		//msb has to be 1, if not, generate new random value
+		if(mpz_tstbit(q,511)!=1){
+			continue;
+		}
+
+		//get first prime number larger than value generated
+		my_nextprime(q,q);
+
+		//if the prime number size has exceeded the predefined size, generate again 
+		if(mpz_sizeinbase(q,2)>512){
+			continue;
+		}
+
+		break;
+	}
+
+	printDec(q);
+	printf("\n");
+	printf("size:%d",mpz_sizeinbase(q,2));
+
+
 
 	int msb_p = mpz_tstbit(p,511);
 	int msb_q = mpz_tstbit(q,511);
@@ -194,6 +257,7 @@ void generate(char* bitSizeArg){
 	mpz_t n;
 	mpz_init2(n,1024);
 	mpz_mul(n,p,q);
+
 
 	mpz_t dec_p,dec_q,phi;
 	mpz_init2(dec_p,512);
@@ -214,7 +278,7 @@ void generate(char* bitSizeArg){
 
 	mpz_t message;
 	mpz_init(message);
-	mpz_set_ui(message,123);
+	mpz_set_ui(message,1234567);
 
 	mpz_t ciphertext;
 	mpz_init(ciphertext);
@@ -224,8 +288,8 @@ void generate(char* bitSizeArg){
 	mpz_init(decr);
 	decrypt(decr,ciphertext,d,n);
 
-	// printDec(decr);
-	// printf("\n");
+	printDec(decr);
+	printf("\n");
 
 	// mpz_clear(p);
 	// mpz_clear(q);
