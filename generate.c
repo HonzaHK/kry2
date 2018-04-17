@@ -1,15 +1,30 @@
 #include <stdio.h>
 #include <gmp.h>
 #include <stdbool.h>
+#include <time.h>
 
 #include "generate.h"
 
-void printHex(mpz_t value){
-	gmp_printf("%#Zx",value);
+void rsa_props_t_init(rsa_props_t* rsa_props){
+	mpz_init(rsa_props->p);
+	mpz_init(rsa_props->q);
+	mpz_init(rsa_props->n);
+	mpz_init(rsa_props->e);
+	mpz_init(rsa_props->d);
+
+	mpz_init(rsa_props->m);
+	mpz_init(rsa_props->c);
 }
 
-void printDec(mpz_t value){
-	gmp_printf("%#Zd",value);
+void rsa_props_t_clear(rsa_props_t* rsa_props){
+	mpz_clear(rsa_props->p);
+	mpz_clear(rsa_props->q);
+	mpz_clear(rsa_props->n);
+	mpz_clear(rsa_props->e);
+	mpz_clear(rsa_props->d);
+
+	mpz_clear(rsa_props->m);
+	mpz_clear(rsa_props->c);
 }
 
 //encrypts plaintext m with public key (n,e)
@@ -24,7 +39,7 @@ void decrypt(mpz_t res, mpz_t c, mpz_t d, mpz_t n){
 
 //used the algo from referenced literature, didnt work, the one from SO seems to work
 //https://stackoverflow.com/questions/23279208/rsa-calculate-d
-void inverse(mpz_t res, mpz_t e, mpz_t phi){
+void multiplicative_inverse(mpz_t res, mpz_t e, mpz_t phi){
 
 	mpz_t local_e;
 	mpz_init(local_e);
@@ -182,7 +197,7 @@ void my_nextprime(mpz_t res, mpz_t value){
 
 }
 
-void generate(char* bitSizeArg){
+void generate(rsa_props_t* rsa_props, char* bitSizeArg){
 
 	int bitSize=0;
 	sscanf(bitSizeArg,"%i",&bitSize);
@@ -191,7 +206,7 @@ void generate(char* bitSizeArg){
 	//init randstate, use time as a seed
 	gmp_randstate_t randstate;
 	gmp_randinit_default(randstate);
-	gmp_randseed_ui(randstate,30);
+	gmp_randseed_ui(randstate,time(NULL));
 
 
 	//init p
@@ -218,9 +233,6 @@ void generate(char* bitSizeArg){
 		break;
 	}
 
-	printDec(p);
-	printf("\n");
-
 	//init q
 	mpz_t q;
 	mpz_init2(q,512);
@@ -244,15 +256,6 @@ void generate(char* bitSizeArg){
 
 		break;
 	}
-
-	printDec(q);
-	printf("\n");
-	printf("size:%d",mpz_sizeinbase(q,2));
-
-
-
-	int msb_p = mpz_tstbit(p,511);
-	int msb_q = mpz_tstbit(q,511);
 	
 	mpz_t n;
 	mpz_init2(n,1024);
@@ -274,23 +277,26 @@ void generate(char* bitSizeArg){
 
 	mpz_t d;
 	mpz_init(d);
-	inverse(d,e,phi);
+	multiplicative_inverse(d,e,phi);
 
-	mpz_t message;
-	mpz_init(message);
-	mpz_set_ui(message,1234567);
+	mpz_set(rsa_props->p,p);
+	mpz_set(rsa_props->q,q);
+	mpz_set(rsa_props->n,n);
+	mpz_set(rsa_props->e,e);
+	mpz_set(rsa_props->d,d);
 
-	mpz_t ciphertext;
-	mpz_init(ciphertext);
-	encrypt(ciphertext,message,e,n);
+	// mpz_t message;
+	// mpz_init(message);
+	// mpz_set_ui(message,1234567);
 
-	mpz_t decr;
-	mpz_init(decr);
-	decrypt(decr,ciphertext,d,n);
+	// mpz_t ciphertext;
+	// mpz_init(ciphertext);
+	// encrypt(ciphertext,message,e,n);
 
-	printDec(decr);
-	printf("\n");
+	// mpz_t decr;
+	// mpz_init(decr);
+	// decrypt(decr,ciphertext,d,n);
 
-	// mpz_clear(p);
-	// mpz_clear(q);
+	// printDec(decr);
+	// printf("\n");
 }
