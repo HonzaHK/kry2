@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-std=c11 -Wall -Wextra -pedantic
 CLIBS=-lgmp
-SOURCES=main.c generate.c generate.h
+SOURCES=main.c kry_rsa.c kry_rsa.h
 EXE=kry
 ZIPNAME=xkubis13.zip
 
@@ -32,4 +32,4 @@ run-decrypt: clean all
 	@./${EXE} -d ${SAMPLE_D} ${SAMPLE_N} ${SAMPLE_C}
 
 zip:
-	zip ${ZIPNAME} Makefile doc.pdf main.c
+	zip ${ZIPNAME} Makefile doc/doc.pdf main.c
