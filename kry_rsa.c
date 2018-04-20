@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <time.h>
 
-#include "generate.h"
+#include "kry_rsa.h"
 
 void rsa_props_t_init(rsa_props_t* rsa_props){
 	mpz_init(rsa_props->p);
@@ -105,6 +105,7 @@ bool my_isprime(mpz_t value, int k){
 	//count, how many times we divided by 2
 	int s=0;
 	while(true){
+
 		//divide by 2
 		mpz_fdiv_q_ui(value_local_dec_reamining,value_local_dec_reamining,2);
 		
@@ -130,7 +131,7 @@ bool my_isprime(mpz_t value, int k){
 		//generate random number a from interval [2;n-2]
 		gmp_randstate_t state;
 		gmp_randinit_default(state);
-		gmp_randseed_ui(state,666);
+		gmp_randseed_ui(state,0);
 		//mpz_urandomm returns number from 0 to NUM-1, so NUM=n-1 is correct upper bound
 		mpz_urandomm(a,state,value_local_dec); 
 		if(mpz_cmp_ui(a,2)<0){
@@ -175,9 +176,13 @@ void my_nextprime(mpz_t res, mpz_t value){
 	mpz_init(value_local);
 	mpz_set(value_local,value);
 
-	//if number is even, do +1 to get odd (only odds may be primes)
 	if(mpz_even_p(value_local)!=0){
+		//if number is even, do +1 to get odd (only odds may be primes)
 		mpz_add_ui(value_local,value_local,1);
+	}
+	else{
+		//if number is odd, it might be a prime, and we want the next one, so increment at least by 2
+		mpz_add_ui(value_local,value_local,2);
 	}
 	
 	while(true){
@@ -197,75 +202,70 @@ void my_nextprime(mpz_t res, mpz_t value){
 
 }
 
-void generate(rsa_props_t* rsa_props, char* bitSizeArg){
+void generate_prime_n_bits(mpz_t res, gmp_randstate_t randstate, mp_bitcnt_t n_bits){
 
-	int bitSize=0;
-	sscanf(bitSizeArg,"%i",&bitSize);
+	while(true){
+
+		//assign it random value of n bits
+		mpz_urandomb(res,randstate,n_bits);
+
+		//msb has to be 1, if not, generate new random value
+		if(mpz_tstbit(res,n_bits-1)!=1){
+			continue;
+		}
+
+		//get first prime number larger than value generated
+		my_nextprime(res,res);
+
+		//if the prime number size has exceeded the predefined size, generate again 
+		if(mpz_sizeinbase(res,2)>n_bits){
+			continue;
+		}
+
+		break;
+	}
+}
+
+void generate(rsa_props_t* rsa_props, char* modulusBitSizeRequiredArg){
+
+	size_t modulusBitSizeRequired=0;
+	sscanf(modulusBitSizeRequiredArg,"%zu",&modulusBitSizeRequired);
+
+	size_t quotientBitSize = modulusBitSizeRequired/2;
+	//if required modulus bit size is odd, the quotient bit size has to be ceiled
+	if(modulusBitSizeRequired%2==1){
+		quotientBitSize+=1;
+	}
 
 
 	//init randstate, use time as a seed
 	gmp_randstate_t randstate;
 	gmp_randinit_default(randstate);
-	gmp_randseed_ui(randstate,time(NULL));
+	gmp_randseed_ui(randstate,0);
 
 
-	//init p
-	mpz_t p;
-	mpz_init2(p,512);
+	//init p,q
+	mpz_t p,q,n;
+	mpz_init(p);
+	mpz_init(q);
+	mpz_init(n);
+
 	while(true){
-		
-		//assign it random value of n bits
-		mpz_urandomb(p,randstate,512);
 
-		//msb has to be 1, if not, generate new random value
-		if(mpz_tstbit(p,511)!=1){
-			continue;
+		generate_prime_n_bits(p,randstate,quotientBitSize);
+		generate_prime_n_bits(q,randstate,quotientBitSize);
+		mpz_mul(n,p,q);
+
+		if(mpz_sizeinbase(n,2)==modulusBitSizeRequired){
+			break;
 		}
-
-		//get first prime number larger than value generated
-		my_nextprime(p,p);
-
-		//if the prime number size has exceeded the predefined size, generate again 
-		if(mpz_sizeinbase(p,2)>512){
-			continue;
-		}
-
-		break;
 	}
-
-	//init q
-	mpz_t q;
-	mpz_init2(q,512);
-	while(true){
-		
-		//assign it random value of n bits
-		mpz_urandomb(q,randstate,512);
-
-		//msb has to be 1, if not, generate new random value
-		if(mpz_tstbit(q,511)!=1){
-			continue;
-		}
-
-		//get first prime number larger than value generated
-		my_nextprime(q,q);
-
-		//if the prime number size has exceeded the predefined size, generate again 
-		if(mpz_sizeinbase(q,2)>512){
-			continue;
-		}
-
-		break;
-	}
-	
-	mpz_t n;
-	mpz_init2(n,1024);
-	mpz_mul(n,p,q);
 
 
 	mpz_t dec_p,dec_q,phi;
-	mpz_init2(dec_p,512);
-	mpz_init2(dec_q,512);
-	mpz_init2(phi,1024);
+	mpz_init(dec_p);
+	mpz_init(dec_q);
+	mpz_init(phi);
 
 	mpz_sub_ui(dec_p,p,1);
 	mpz_sub_ui(dec_q,q,1);
@@ -274,6 +274,22 @@ void generate(rsa_props_t* rsa_props, char* bitSizeArg){
 	mpz_t e;
 	mpz_init(e);
 	mpz_set_ui(e,65537);
+
+	mpz_t remainder;
+	mpz_init(remainder);
+	while(true){
+
+		//perform remainder = phi % e
+		mpz_mod(remainder,phi,e);
+
+		//if there is a reminder, value of e is okay
+		if(mpz_sgn(remainder)>0){
+			break;
+		}
+
+		//if phi is divisible by e without a reminder, assign into e next prime and try again
+		my_nextprime(e,e);
+	}
 
 	mpz_t d;
 	mpz_init(d);
@@ -287,7 +303,7 @@ void generate(rsa_props_t* rsa_props, char* bitSizeArg){
 
 	// mpz_t message;
 	// mpz_init(message);
-	// mpz_set_ui(message,1234567);
+	// mpz_set_ui(message,0x123456789);
 
 	// mpz_t ciphertext;
 	// mpz_init(ciphertext);
@@ -297,6 +313,5 @@ void generate(rsa_props_t* rsa_props, char* bitSizeArg){
 	// mpz_init(decr);
 	// decrypt(decr,ciphertext,d,n);
 
-	// printDec(decr);
-	// printf("\n");
+	// gmp_printf("decrypted: %#Zx\n",decr);
 }

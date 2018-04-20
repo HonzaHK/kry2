@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "generate.h"
+#include "kry_rsa.h"
 
 typedef enum { 
 	EGenerate,
